@@ -1,0 +1,142 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  passwordHash          String
+  name                  String
+  role                  String                 @default("PATIENT")
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  patient               PatientProfile?
+  organizationMemberships OrganizationMembership[] @relation("OrganizationMember")
+  assignedCareAssignments CareAssignment[]       @relation("AssignedClinician")
+  grantedAssignments   CareAssignment[]       @relation("AssignmentGrantor")
+  revokedAssignments   CareAssignment[]       @relation("AssignmentRevoker")
+}
+
+model PatientProfile {
+  id                 String                 @id @default(uuid())
+  userId             String                 @unique
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  age                Int
+  gender             String
+  baselineMMSE       Float?                 @default(30.0)
+  medicalHistory     String?                @default("")
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  sessions           AssessmentSession[]
+  organizationLinks  OrganizationPatient[]
+  careAssignments    CareAssignment[]
+}
+
+model AssessmentSession {
+  id           String         @id @default(uuid())
+  patientId    String
+  patient      PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicianId  String?
+  status       String         @default("CREATED") // CREATED, CAPTURING, PROCESSING, FUSED, UNDER_REVIEW, COMPLETED
+  notes        String?        @default("")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  modalityProvenanceJson String @default("{}")
+  modalityData ModalityData[]
+  riskReport   RiskReport?
+}
+
+model ModalityData {
+  id                String            @id @default(uuid())
+  sessionId         String
+  session           AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  modalityType      String            // "imaging", "speech", "motor", "cognitive"
+  rawDataJson       String
+  featureVectorJson String
+  riskScore         Float?
+  source            String            @default("simulated")
+  createdAt         DateTime          @default(now())
+}
+
+model RiskReport {
+  id                          String            @id @default(uuid())
+  sessionId                   String            @unique
+  session                     AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  fusedRiskScore              Float
+  confidenceIntervalLow       Float
+  confidenceIntervalHigh      Float
+  riskBand                    String            // "low risk", "moderate risk", "elevated risk"
+  mmseEstimate                Float?
+  modalityScoresJson          String
+  topContributingFeaturesJson String
+  heatmapPngBase64            String?
+  clinicianNotes              String?           @default("")
+  reviewedBy                  String?
+  reviewedAt                  DateTime?
+  createdAt                   DateTime          @default(now())
+}
+
+model Organization {
+  id          String                   @id @default(uuid())
+  name        String
+  isActive    Boolean                  @default(true)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  memberships OrganizationMembership[]
+  patients    OrganizationPatient[]
+  assignments CareAssignment[]
+}
+
+model OrganizationMembership {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("OrganizationMember", fields: [userId], references: [id], onDelete: Cascade)
+  role           String
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId, role, isActive])
+}
+
+model OrganizationPatient {
+  id                 String         @id @default(uuid())
+  organizationId     String
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientProfileId   String
+  patientProfile     PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@unique([organizationId, patientProfileId])
+  @@index([patientProfileId, isActive])
+}
+
+model CareAssignment {
+  id                 String         @id @default(uuid())
+  organizationId     String
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientProfileId   String
+  patientProfile     PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+  clinicianUserId    String
+  clinician          User           @relation("AssignedClinician", fields: [clinicianUserId], references: [id], onDelete: Cascade)
+  grantedByUserId    String
+  grantedBy          User           @relation("AssignmentGrantor", fields: [grantedByUserId], references: [id])
+  revokedByUserId    String?
+  revokedBy          User?          @relation("AssignmentRevoker", fields: [revokedByUserId], references: [id])
+  assignedAt         DateTime       @default(now())
+  revokedAt          DateTime?
+
+  @@unique([organizationId, patientProfileId, clinicianUserId])
+  @@index([clinicianUserId, revokedAt])
+  @@index([patientProfileId, revokedAt])
+}
