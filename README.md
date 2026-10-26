@@ -7,7 +7,7 @@ The project is designed to support early screening use cases with a modular arch
 - frontend patient and clinician experience
 - backend API and data layer
 - ML inference engine for fused risk estimation
-- explainability and modality-based scoring
+- explainability and modality-based scoring.
 
 ## Project goals
 
